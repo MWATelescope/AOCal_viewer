@@ -1,0 +1,18 @@
+[project]
+name = "AOCal_viewer"
+version = "0.1.0"
+description = "Graphical viewer for AOCal format radio astronomy calibration files"
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.1.7",
+    "napari[all]>=0.6.6",
+    "requests>=2.31.0",
+    "numpy>=1.26.4"
+]
+
+[project.scripts]
+hello = "calnap.calnap:cli"
+
+[build-system]
+requires = ["flit_core<4"]
+build-backend = "flit_core.buildapi"
