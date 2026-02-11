@@ -130,8 +130,6 @@ def load_aocal(filename, divide_index=None):
     data.shape = (1, ntiles, nchannels, 4)
     ndata = data[0, :, :, :]
 
-    ndata = 1.0 / ndata  # Take the inverse
-
     # downsample by averaging to 40kHz if higher res than this:
     if nchannels > 768:
         dfactor = nchannels // 768
