@@ -11,7 +11,7 @@ dependencies = [
 ]
 
 [project.scripts]
-hello = "calnap.calnap:cli"
+calnap = "calnap.calnap:cli"
 
 [build-system]
 requires = ["flit_core<4"]

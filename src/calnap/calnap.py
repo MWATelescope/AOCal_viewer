@@ -3,9 +3,10 @@
 # /// script
 # requires-python = ">=3.13"
 # dependencies = [
-#     "napari[all]",
-#     "requests",
-#     "click",
+#     "click>=8.1.7",
+#     "napari[all]>=0.6.6",
+#     "requests>=2.31.0",
+#     "numpy>=1.26.4"
 # ]
 # ///
 
