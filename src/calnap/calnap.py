@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 
 # /// script
-# requires-python = "3.12"
+# requires-python = "==3.12"
 # dependencies = [
 #     "click>=8.1.7",
 #     "napari[all]>=0.6.6",
