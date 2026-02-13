@@ -3,12 +3,12 @@ Graphical viewer for AOCal format calibration files, using Napari
 
 This command line utility allows the user to view the contents of AOCal files, used by the Murchison
 Widefield Array pipelines to store calibration data for the telescope. The bulk of the work is done 
-by Napari, an open-source viewer for N-dimensional arrays:
+by napari, an open-source Python viewer for N-dimensional arrays:
 
 https://napari.org/stable/
 
 This utility is a wrapper that loads an AOCal format calibration file, splits the contents into phases and gains 
-for each polarisation product, and passes them to Napari as layers, along with metadata about the observation 
+for each polarisation product, and passes them to napari as layers, along with metadata about the observation 
 in additional layers.
 
 The AOCal file format is described here:
@@ -50,9 +50,18 @@ After cloning the repository:
 
 This will place 'calnap' in your path, while the python environment is active.
 
-If you use 'uv', then thanks to Dev Null, you can also cd into AOCal_viewer/src/calnap and just do:
+Or for those using 'uv', instructions from Greg Sleap:
+
+  * Clone the repo
+  * Change to the AOCal_viewer directory (where pyproject.toml is found)
+  * run "uv sync" to create a new virtual env in .venv with all the packages
+  * "source .venv/bin/activate"
+
+Or, thanks to magic comments in the file header by Dev Null, you can also cd into AOCal_viewer/src/calnap and just do:
 
 uv run calnap.py \<arguments>
+
+And that will create and cache a custom Python environment with all the packages needed, and run the script.
 
 ## Usage
 
@@ -60,26 +69,28 @@ The basic usage is:
 
 calnap view \<filename>
 
-This will open up a Napari window with a grey grid - the columns are the 24 coarse channels in the observation,
+This will open up a napari window with a grey grid - the columns are the 24 coarse channels in the observation,
 and the rows show all the receivers in the observation, each connected to eight tiles. Frequency is on the
 horizontal axis (one pixel per fine channel), and input (MWA tile) is on the vertical axis (one pixel per tile).
 Inputs are ordered from the lowest tile ID at the top to the highest tile ID at the bottom. This is the same order as 
 used in the data files for the observation - but bear in mind that while a calibrator observation usually uses 
 all tiles, most modern MWA observations use some subset of tiles. 
 
-The layer tool at the bottom left of the Napari window can be used to view different aspects of the data. Each line
+The layer tool at the bottom left of the napari window can be used to view different aspects of the data. Each line
 in the layer tool has an 'eye' icon to toggle the layer visibilty. Click the eye icon for a layer to make it visible,
 and it will brighten and show a light-gray background, indicating that this layer is visible. Click on the eye icon
 again to make it invisible. More than one layer can be visible at the same time.
 
 Clicking elsewhere on a layer in the layer tool will make that layer the 'active' layer, shown by a blue background. 
-The active layer can be controlled using the widgets at the top left (contrast limits, gamma factor, opacity, etc).
+The active layer/s can be controlled using the widgets at the top left (contrast limits, gamma factor, opacity, etc).
 The value of the raw data in the active layer at the pixel under the mouse cursor will be shown at the bottom left 
-of the Napari window in the data tooltip, after the coordinates. Shift-clicking will let you make multiple layers 
+of the napari window in the data tooltip, after the coordinates. Shift-clicking will let you make multiple layers 
 active, so widgets (eg opacity) work on all active layers, and the tooltip shows the data values in all active layers.
 
 Note that which layer/s is/are Active (blue), and which layer/s is/are visible (highlighted eye icon) are unrelated
 concepts. A layer can be active but not visible, or visible and not active.
+
+For more information on using the napari viewer, see the documentation here: https://napari.org/stable/tutorials/start_index.html
 
 The layers are (in order):
   * **Channels** - these are the tall, narrow vertical grey shapes showing each of the 24 coarse channels. They are

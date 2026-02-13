@@ -26,7 +26,7 @@ import click
 
 import napari
 
-# AOCal binary header - this structure, followed by a numpy array of complex128 values
+# AOCal binary header - this structure, immediately followed by a numpy array of complex128 values with calibration data
 HEADER_FORMAT = "8s6I2d"
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 
@@ -68,6 +68,8 @@ def get_receiver_shapedata(nchannels):
         names: A list of receiver name strings, one per receiver, including the tiles on that receiver
         corners: A list of shapes, each defined by a list of four corner coordinates
 
+    This function uses the globals set by a previous call to get_metdata()
+
     :param nchannels: Number of fine channels in the calibration file
     :return: a tuple pf (names, corners)
     """
@@ -87,6 +89,8 @@ def get_channel_shapedata(nchannels):
         names: A list of coarse channel name strings, one per receiver
         corners: A list of shapes, each defined by a list of four corner coordinates
 
+    This function uses the globals set by a previous call to get_metdata()
+
     :param nchannels: Number of fine channels in the calibration file
     :return: a tuple pf (names, corners)
     """
@@ -104,7 +108,7 @@ def load_aocal(filename, divide_index=None):
     Load a binary format AOCal object in a bytes string, and split into the header and data.
 
     If the input file has more than 768 coarse channels (40 kHz frequency resolution), then the data is
-    averaged to downsample to this resolution for display.
+    averaged to downsample to this resolution for display, to keep the aspect ratio reasonable.
 
     If divide_index is provided, then the phases of all tiles are divided by the phases of this reference tile. This
     can be used to compare AOCal files produced by hyperdrive (that don't use a reference tile) with files produced
@@ -124,31 +128,38 @@ def load_aocal(filename, divide_index=None):
     with open(filename, 'rb') as f:
         aocal_string = f.read()
     header = struct.unpack(HEADER_FORMAT, aocal_string[:HEADER_SIZE])
-    _, _, _, _, ntiles, nchannels, _, _, _ = header
+    _, _, _, _, ntiles, nchannels, _, _, _ = header        # MWA doesn't use most of the header fields
     print('Loaded file: %s - header: %s' % (filename, header))
     data = numpy.frombuffer(aocal_string[HEADER_SIZE:], dtype=numpy.complex128)
     data.shape = (1, ntiles, nchannels, 4)
-    ndata = data[0, :, :, :]
+    ndata = data[0, :, :, :]   # Ignore timestep axis, MWA only stores a single timestep
 
-    # downsample by averaging to 40kHz if higher res than this:
+    # downsample by averaging fine channel data to 40kHz if higher res than this:
     if nchannels > 768:
         dfactor = nchannels // 768
         ndata = ndata.reshape((ntiles, 768, dfactor, 4))
         ndata = numpy.nanmean(ndata, axis=2)
         nchannels = 768
 
-    gains, phases = numpy.vectorize(cmath.polar)(ndata)
+    gains, phases = numpy.vectorize(cmath.polar)(ndata)   # Convert from complex to a tuple of vector phase and length arrays
 
-    gains[numpy.isinf(gains)] = 0
+    gains[numpy.isinf(gains)] = 0    # Set the gain to zero (flag the tile) wherever the gain is infinite (bad fit)
 
     if divide_index is not None:
-        phases = phases - phases[divide_index]
-        # gains = gains / gains[divide_index]   # Don't correct, because gains in database fit generated aocal files aren't relative to the reference tile
+        phases = phases - phases[divide_index]    # Subtract the corresponding reference tile phase from each value
+        # gains = gains / gains[divide_index]     # Don't correct, because gains in database fit generated aocal files aren't relative to the reference tile
 
     print('    Gains min/max = %f %f' % (numpy.nanmin(gains), numpy.nanmax(gains)))
     print('    Phases min/max = %f %f' % (numpy.nanmin(phases), numpy.nanmax(phases)))
 
     return ntiles, nchannels, gains, phases
+
+#############################################################################################################
+#
+# Each of the following functions defines a top level command handled by calnap, grouped under the 'cli'
+# command group. See click documentation for details: https://click.palletsprojects.com/en/stable/
+#
+#############################################################################################################
 
 
 @click.group()
@@ -157,14 +168,37 @@ def cli():
 
 
 @cli.command(context_settings={"ignore_unknown_options": True})
-@click.argument('filename')
-@click.option('--channel', type=int, default=None)
-@click.option('--divide_index', type=int, default=None)
-@click.option('--show_tiledata', is_flag=True)
+@click.argument('filename',
+                help='Calibration data file name')
+@click.option('--channel',
+              type=int,
+              default=None,
+              help='Coarse channel number to display (if the file contains 24 channels) or if the file only contains one coarse channel, the coarse channel number for the data in this file.')
+@click.option('--divide_index',
+              type=int,
+              default=None,
+              help='Input index (not tile ID) of the reference tile, and all tile phases shown will be relative to this tile.')
+@click.option('--show_tiledata',
+              is_flag=True,
+              help='If supplied, write a line of statistics out for each tile in the calibration data file.')
 def view(filename, channel, divide_index, show_tiledata):
+    """
+    Run when the user executes 'calnap view \<options> \<filename>'
+
+    The command line options are defined above, and when run, they map to the function
+    parameters with the same names.
+
+    :param filename: Calibration data file name
+    :param channel:  Coarse channel number to display (if the file contains 24 channels) or if the file only
+                     contains one coarse channel, the coarse channel number for the data in this file.
+    :param divide_index: Input index (not tile ID) of the reference tile, and all tile phases shown will be relative to this tile.
+    :param show_tiledata: If supplied, write a line of statistics out for each tile in the calibration data file.
+    :return:
+    """
     ntiles, nchannels, gains, phases = load_aocal(filename, divide_index=divide_index)
     # gains and phases have shape (ntiles, nchannels, 4)
 
+    # MWA AOCal file names always start with a 10-digit obsid, so strip that off and get the metadata for the observation
     obsid = ''.join([x for x in filename if x.isdigit()])[:10]
     get_metadata(obsid=int(obsid))
 
@@ -189,9 +223,9 @@ def view(filename, channel, divide_index, show_tiledata):
         delta_freq = 30.72e6 / nchannels
         print('Showing coarse channels: %s' % CHANNELS)
 
-    if show_tiledata:
+    if show_tiledata:   # Print statistics for each tile
         for i in range(ntiles):
-            delta_phase = (phases[i, 12, 0] - phases[i, 2, 0]) / 10   # Average over 10 fine channels
+            delta_phase = (phases[i, 12, 0] - phases[i, 2, 0]) / 10   # Average the phase slope over 10 fine channels
             if delta_phase > cmath.pi:
                 delta_phase -= cmath.pi * 2
             elif delta_phase < -cmath.pi:
@@ -200,43 +234,50 @@ def view(filename, channel, divide_index, show_tiledata):
             delay_m = phase_slope / (2 * cmath.pi / 2.9979e8)
             print('Tile %d: Px=%6.3f, Py=%6.3f, delay_m=%6.2f m' % (TI2TN[i], phases[i][2][0], phases[i][2][1], delay_m))
 
-    pnames = ['Phases:X', 'Phases:XY', 'Phases:YX', 'Phases:Y']
-    gnames = ['Gains:X', 'Gains:XY', 'Gains:YX', 'Gains:Y']
-    cmaps = ['hsv', 'hsv', 'hsv', 'hsv']
+    pnames = ['Phases:X', 'Phases:XY', 'Phases:YX', 'Phases:Y']    # Phase layer names, one for each polarisation term
+    gnames = ['Gains:X', 'Gains:XY', 'Gains:YX', 'Gains:Y']    # Gain layer names, one for each polarisation term
+    cmaps = ['hsv', 'hsv', 'hsv', 'hsv']   # Color map names, one for each polarisation term
 
     viewer = napari.Viewer()
     gn = viewer.add_image(gains,
                           gamma=0.5,
-                          visible=False,
-                          interpolation2d='nearest',
+                          visible=False,               # Default to all layers not visible on startup
+                          interpolation2d='nearest',   # Turn off interpolation so we can see clear tile/channel pixel boundaries
                           interpolation3d='nearest',
-                          name=gnames,
-                          channel_axis=2)
+                          name=gnames,      # Layer name list, one for each layer in axis 2, the polarisation term
+                          channel_axis=2)   # this option means that the array should be split into four layers using the final axis
 
     pn = viewer.add_image(phases,
-                          visible=False,
+                          visible=False,               # Default to all layers not visible on startup
                           colormap=cmaps,
                           contrast_limits=[-cmath.pi, cmath.pi],
-                          interpolation2d='nearest',
+                          interpolation2d='nearest',   # Turn off interpolation so we can see clear tile/channel pixel boundaries
                           interpolation3d='nearest',
-                          name=pnames,
-                          channel_axis=2)
+                          name=pnames,      # Layer name list, one for each layer in axis 2, the polarisation term
+                          channel_axis=2)   # this option means that the array should be split into four layers using the final axis
 
+    # Note that if we were to leave off the channel_axis term, each layer would be a 3-dimensional array, (ntiles, nfinechannels, 4)
+
+    # Show the plot axes with arrows in the top left corner
     viewer.dims.axis_labels = ('Input', 'Channel')
     viewer.axes.labels = True
     viewer.axes.visible = True
 
+    # Create two arrays of the same shape (ntiles, nfinechannels, 4) containing the receiver IDs and tile IDs respectively
     receiver_labels = numpy.zeros(shape=(ntiles, nchannels), dtype=numpy.int8)
     tilemap = numpy.zeros(shape=(ntiles, nchannels), dtype=numpy.int32)
     for i in range(ntiles):
         receiver_labels[i, :] = TI2R[i]
         tilemap[i, :] = TI2TN[i]
 
+    # Add the receiver ID and tile ID layers to napari so we can use them as tooltip values under the mouse cursor
     rl = viewer.add_labels(receiver_labels, name='Receiver ID', depiction='plane', blending='additive', opacity=0.0)
     rl2 = viewer.add_labels(tilemap, name='Tile ID', depiction='plane', blending='additive', opacity=0.0)
 
+    # Get a list of receiver IDs, and a matching list of corner coordinates for every receiver
     rnames, rcorners = get_receiver_shapedata(nchannels)
 
+    # Configure font, color and position details for the receiver name labels
     rfeatures = {'rname':rnames}
     rtext = {'string': '{rname}:',
              'anchor': 'center',
@@ -244,7 +285,7 @@ def view(filename, channel, divide_index, show_tiledata):
              'size': 8,
              'color': 'green'}
 
-    # add polygons
+    # add polygons to the plot for each of those receiver shapes, in a napari shape layer
     shapes_layer = viewer.add_shapes(rcorners,
                                      features=rfeatures,
                                      shape_type='polygon',
@@ -254,8 +295,10 @@ def view(filename, channel, divide_index, show_tiledata):
                                      name='Receivers')
 
     if channel is None:
+        # Get a list of channel number strings, and a matching list of corner coordinates for every coarse channel
         cnames, ccorners = get_channel_shapedata(nchannels)
 
+        # Configure font, color and position details for the channel name labels
         cfeatures = {'cname': cnames}
         ctext = {'string': '{cname}:',
                  'anchor': 'center',
@@ -263,7 +306,7 @@ def view(filename, channel, divide_index, show_tiledata):
                  'size': 8,
                  'color': 'green'}
 
-        # add polygons
+        # add polygons to the plot for each of those receiver shapes, in a napari shape layer
         shapes_layer = viewer.add_shapes(ccorners,
                                          features=cfeatures,
                                          shape_type='polygon',
@@ -273,7 +316,7 @@ def view(filename, channel, divide_index, show_tiledata):
                                          name='Channels')
 
     viewer.reset_view()
-    napari.run()
+    napari.run()   # Start the interactive viewer event loop, and run until the user exits the application
 
 
 @cli.command(context_settings={"ignore_unknown_options": True})
