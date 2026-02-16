@@ -202,7 +202,7 @@ def view(filename, channel, divide_index, show_tiledata):
     obsid = ''.join([x for x in filename if x.isdigit()])[:10]
     get_metadata(obsid=int(obsid))
 
-    if channel is not None:
+    if channel is not None:   # If a channel number was specified on the command line
         if divmod(nchannels, 24)[1] == 0:    # Choose only one channel out of a 24-channel fit
             nchannels = nchannels // 24   # Only as wide as one coarse channel
             if 1 <= channel <= 24:   # Index 1-24 in the list of channels in this observation == mwax box number
@@ -320,29 +320,55 @@ def view(filename, channel, divide_index, show_tiledata):
 
 
 @cli.command(context_settings={"ignore_unknown_options": True})
-@click.argument('filenames', nargs=2)
-@click.option('--channel', type=int, default=None)
-@click.option('--divide_index1', type=int, default=None)
-@click.option('--divide_index2', type=int, default=None)
+@click.argument('filenames',
+                nargs=2,
+                help="Exactly two filenames of AOCal files must be supplied")
+@click.option('--channel',
+              type=int,
+              default=None,
+              help='Coarse channel number to display (if one file contains 24 channels) or if both files only contains one coarse channel, the coarse channel number for the data in both files.')
+@click.option('--divide_index1',
+              type=int,
+              default=None,
+              help='Input index (not tile ID) of the reference tile for file 1, and all tile phases shown will be relative to this tile.')
+@click.option('--divide_index2',
+              type=int, default=None,
+              help='Input index (not tile ID) of the reference tile for file 2, and all tile phases shown will be relative to this tile.')
 def diff(filenames, channel, divide_index1, divide_index2):
+    """
+    Run when the user executes 'calnap diff \<options> \<filename1> \<filename1>'
+
+    The command line options are defined above, and when run, they map to the function
+    parameters with the same names.
+
+    :param filenames:
+    :param channel:
+    :param divide_index1:
+    :param divide_index2:
+    :return:
+    """
     ntiles1, nchannels1, gains1, phases1 = load_aocal(filenames[0], divide_index=divide_index1)
     ntiles2, nchannels2, gains2, phases2 = load_aocal(filenames[1], divide_index=divide_index2)
+    # gains and phases have shape (ntiles, nchannels, 4)
 
+    # MWA AOCal file names always start with a 10-digit obsid, so strip that off and get the metadata for the observation
+    # NOTE that only the first filename is parsed. It's up to the user to make sure that both files are for the same obsid,
+    # or have the same tilesets
     obsid = ''.join([x for x in filenames[0] if x.isdigit()])[:10]
     get_metadata(obsid=int(obsid))
 
-    if channel is not None:
+    if channel is not None:    # If a channel number was specified on the command line
         if 1 <= channel <= 24:  # Index 1-24 in the list of channels in this observation == mwax box number
             coarse_channel_index = channel - 1
         else:
             coarse_channel_index = CHANNELS.index(channel)
 
-        if divmod(nchannels1, 24)[1] == 0:
+        if divmod(nchannels1, 24)[1] == 0:    # Choose only one channel out of a 24-channel fit for file 1
             nchannels1 = nchannels1 // 24   # Only as wide as one coarse channel
             gains1 = gains1[:, (coarse_channel_index * nchannels1):((coarse_channel_index + 1) * nchannels1), :]
             phases1 = phases1[:, (coarse_channel_index * nchannels1):((coarse_channel_index + 1) * nchannels1), :]
 
-        if divmod(nchannels2, 24)[1] == 0:
+        if divmod(nchannels2, 24)[1] == 0:    # Choose only one channel out of a 24-channel fit for file 2
             nchannels2 = nchannels2 // 24   # Only as wide as one coarse channel
             gains2 = gains2[:, (coarse_channel_index * nchannels2):((coarse_channel_index + 1) * nchannels2), :]
             phases2 = phases2[:, (coarse_channel_index * nchannels2):((coarse_channel_index + 1) * nchannels2), :]
@@ -351,13 +377,18 @@ def diff(filenames, channel, divide_index1, divide_index2):
     else:
         print('Showing coarse channels: %s' % CHANNELS)
 
+    # Throw an exception if the two files have different dimensions
     assert ntiles1 == ntiles2
     assert nchannels1 == nchannels2
     ntiles = ntiles1
     nchannels = nchannels1
     # gains and phases have shape (ntiles, nchannels, 2)
 
+    # The gains displayed are 0.00 if the two files have equal gain, +1.0 if the gain in file 1 is ten times
+    # larger than the gain in file 2, etc
     gains = numpy.log10(gains1 / gains2)
+
+    # Phases shown are simply phase1 minus phase 2, wrapped to the range -Pi to Pi
     phases = numpy.minimum(abs(phases1 - phases2), cmath.pi * 2 - abs(phases1 - phases2))
 
     print('Differenced Gains: log10(G1/G2): min, max, stdev')
@@ -371,6 +402,7 @@ def diff(filenames, channel, divide_index1, divide_index2):
     print('   YX: %f - %f +/- %f' % (numpy.nanmin(phases[:,:,2]), numpy.nanmax(phases[:,:,2]), numpy.nanstd(phases[:,:,2])))
     print('   YY: %f - %f +/- %f' % (numpy.nanmin(phases[:,:,3]), numpy.nanmax(phases[:,:,3]), numpy.nanstd(phases[:,:,3])))
 
+    # Lists of phase layer names and gain layer names, one for each of the four polarisation products in the final axis
     pnames = ['Phases:X1-X2', 'Phases:XY1-XY2', 'Phases:YX1-YX2', 'Phases:Y1-Y2']
     gnames = ['Gains:log10(X1/X2)', 'Gains:log10(XY1/XY2)', 'Gains:log10(YX1/YX2)', 'Gains:log10(Y1/Y2)']
 
@@ -381,14 +413,14 @@ def diff(filenames, channel, divide_index1, divide_index2):
                           interpolation2d='nearest',
                           interpolation3d='nearest',
                           name=gnames,
-                          channel_axis=2)
+                          channel_axis=2)   # this option means that the array should be split into four layers using the final axis
 
     pn = viewer.add_image(phases,
                           visible=False,
                           interpolation2d='nearest',
                           interpolation3d='nearest',
                           name=pnames,
-                          channel_axis=2)
+                          channel_axis=2)   # this option means that the array should be split into four layers using the final axis
 
     viewer.dims.axis_labels = ('Input', 'Channel')
     viewer.axes.labels = True
