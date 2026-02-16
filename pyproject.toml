@@ -2,7 +2,7 @@
 name = "calnap"
 version = "0.1.0"
 description = "Graphical viewer for AOCal format radio astronomy calibration files"
-requires-python = ">=3.11"
+requires-python = ">=3.12,<3.14"
 dependencies = [
     "click>=8.1.7",
     "napari[all]>=0.6.6",
