@@ -1,5 +1,6 @@
 #!/usr/bin/env -S uv run --script
 
+# at time of writing, the 'triangle' package won't compile against Python 3.14
 # /// script
 # requires-python = ">=3.12,<3.14"
 # dependencies = [
