@@ -169,8 +169,7 @@ def cli():
 
 
 @cli.command(context_settings={"ignore_unknown_options": True})
-@click.argument('filename',
-                help='Calibration data file name')
+@click.argument('filename')
 @click.option('--channel',
               type=int,
               default=None,
@@ -322,8 +321,7 @@ def view(filename, channel, divide_index, show_tiledata):
 
 @cli.command(context_settings={"ignore_unknown_options": True})
 @click.argument('filenames',
-                nargs=2,
-                help="Exactly two filenames of AOCal files must be supplied")
+                nargs=2)
 @click.option('--channel',
               type=int,
               default=None,
