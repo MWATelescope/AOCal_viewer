@@ -23,6 +23,8 @@ numpy.seterr(all='ignore')   # Suppress divide by zero warnings, just return NaN
 import warnings
 warnings.filterwarnings("ignore")
 
+from astropy.io import fits
+
 import click
 
 import napari
@@ -155,6 +157,69 @@ def load_aocal(filename, divide_index=None):
 
     return ntiles, nchannels, gains, phases
 
+
+def load_hyperdrive(filename, divide_index=None):
+    """
+    Load a FITS format Hyperdrive calibration solution.
+
+    If the input file has more than 768 coarse channels (40 kHz frequency resolution), then the data is
+    averaged to downsample to this resolution for display, to keep the aspect ratio reasonable.
+
+    If divide_index is provided, then the phases of all tiles are divided by the phases of this reference tile. This
+    can be used to compare AOCal files produced by hyperdrive (that don't use a reference tile) with files produced
+    by the web service (that always have zero phase offset for the reference tile).
+
+    Note that gains are NOT corrected relative to this reference tile, because the database fits have aboslute gains,
+    not gains relative to the reference tile.
+
+    The complex values are converted and returned as two numpy arrays:
+        gains: The absolute value (vector lengths) of the complex values
+        phases: The polar angle (in radians) of the complex values
+
+    :param filename: file name to read
+    :param divide_index: If not None, divide all complex values by the corresponding value for this tile index
+    :return: A tuple of (ntiles, nchannels, gains, phases) where gains and phases are numpy ndarrays of shape (ntiles, nchannel, 4)
+    """
+    f = fits.open(filename)
+
+    data = f['SOLUTIONS'].data
+    # noinspection PyTupleAssignmentBalance
+    (ntimes, ntiles, nchannels, npols) = data.shape
+    assert ntimes == 1
+    assert npols == 8
+    data.shape = (ntiles, nchannels, 8)   # Ignore timestep axis, MWA only stores a single timestep
+
+    # downsample by averaging fine channel data to 40kHz if higher res than this:
+    if nchannels > 768:
+        dfactor = nchannels // 768
+        data = data.reshape((ntiles, 768, dfactor, 8))
+        data = numpy.nanmean(data, axis=2)
+        nchannels = 768
+
+    xx = data[:, :, 0] + data[:, :, 1] * 1j
+    xy = data[:, :, 2] + data[:, :, 3] * 1j
+    yx = data[:, :, 4] + data[:, :, 5] * 1j
+    yy = data[:, :, 6] + data[:, :, 7] * 1j
+
+    ndata = numpy.zeros((ntiles, nchannels, 4), dtype=numpy.complex128)
+    ndata[:, :, 0] = xx
+    ndata[:, :, 1] = xy
+    ndata[:, :, 2] = yx
+    ndata[:, :, 3] = yy
+
+    gains, phases = numpy.vectorize(cmath.polar)(ndata)   # Convert from complex to a tuple of vector phase and length arrays
+
+    gains[numpy.isinf(gains)] = 0    # Set the gain to zero (flag the tile) wherever the gain is infinite (bad fit)
+
+    if divide_index is not None:
+        phases = phases - phases[divide_index]    # Subtract the corresponding reference tile phase from each value
+        # gains = gains / gains[divide_index]     # Don't correct, because gains in database fit generated aocal files aren't relative to the reference tile
+
+    print('    Gains min/max = %f %f' % (numpy.nanmin(gains), numpy.nanmax(gains)))
+    print('    Phases min/max = %f %f' % (numpy.nanmin(phases), numpy.nanmax(phases)))
+
+    return ntiles, nchannels, gains, phases
+
 #############################################################################################################
 #
 # Each of the following functions defines a top level command handled by calnap, grouped under the 'cli'
@@ -195,7 +260,10 @@ def view(filename, channel, divide_index, show_tiledata):
     :param show_tiledata: If supplied, write a line of statistics out for each tile in the calibration data file.
     :return:
     """
-    ntiles, nchannels, gains, phases = load_aocal(filename, divide_index=divide_index)
+    if filename.endswith('.fits'):
+        ntiles, nchannels, gains, phases = load_hyperdrive(filename, divide_index=divide_index)
+    else:
+        ntiles, nchannels, gains, phases = load_aocal(filename, divide_index=divide_index)
     # gains and phases have shape (ntiles, nchannels, 4)
 
     # MWA AOCal file names always start with a 10-digit obsid, so strip that off and get the metadata for the observation
