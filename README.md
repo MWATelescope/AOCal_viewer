@@ -1,5 +1,5 @@
 # AOCal_viewer
-Graphical viewer for AOCal and Hyuperdrive format calibration files, using Napari
+Graphical viewer for AOCal and Hyperdrive format calibration files, using Napari
 
 This command line utility allows the user to view the contents of calibration fit files, used by the Murchison
 Widefield Array pipelines to store calibration data for the telescope. The bulk of the work is done 
