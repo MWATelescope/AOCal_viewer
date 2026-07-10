@@ -7,7 +7,7 @@ by napari, an open-source Python viewer for N-dimensional arrays:
 
 https://napari.org/stable/
 
-This utility is a wrapper that loads a Hyperdrive calibration fit file in FITS formatr, or an AOCal format 
+This utility is a wrapper that loads a Hyperdrive calibration fit file in FITS format, or an AOCal format 
 calibration file, splits the contents into phases and gains for each polarisation product, and passes them
 to napari as layers, along with metadata about the observation in additional layers.
 
